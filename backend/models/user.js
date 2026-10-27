@@ -1,13 +1,14 @@
 // models/user.js
+//cambiar type modules
+import mongoose from 'mongoose';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import config from '../config/config.js';
+const config = configApp.get(process.env.NODE_ENV);
+// desestructuracion
+const { Schema, model } = mongoose;
 
-const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const config = require('../config/config').get(process.env.NODE_ENV);
-
-const SALT_I = 10;
-
-const userSchema = mongoose.Schema({
+const userSchema = new Schema({
     email: {
         type: String,
         required: true,
@@ -32,67 +33,62 @@ const userSchema = mongoose.Schema({
     }
 });
 
+// Agregar async / await en las funciones 
+// cambiar var por const
+
 // Encriptar la contraseña antes de guardar el usuario
-userSchema.pre('save', function (next) {
-    var user = this;
+userSchema.pre('save', async function (next) {
+    const user = this;
+    const saltRounds = parseInt(process.env.SALT_ROUNDS, 10) || 10;
 
     if (user.isModified('password')) {
-        bcrypt.genSalt(SALT_I, function (err, salt) {
-            if (err) return next(err);
-
-            bcrypt.hash(user.password, salt, function (err, hash) {
-                if (err) return next(err);
-                user.password = hash;
-                next();
-            });
-        });
+        //agregar try / catch
+        try {
+            const salt = await bcrypt.genSalt(saltRounds);
+            const hash = await bcrypt.hash(user.password, salt);
+            user.password = hash;
+            next();
+        } catch (err) {
+            next(err);
+        }
     } else {
         next();
     }
 });
 
 // Método para comparar contraseñas en el Login
-userSchema.methods.comparepassword = function (candidatePassword, cb) {
-    bcrypt.compare(candidatePassword, this.password, function (err, isMatch) {
-        if (err) return cb(err);
-        cb(null, isMatch);
-    });
+userSchema.methods.comparePassword = async function (candidatePassword) {
+    return await bcrypt.compare(candidatePassword, this.password);
+    //eliminar if
 };
 
 // Generar Token JWT al iniciar sesión
-userSchema.methods.generateToken = function (cb) {
-    var user = this;
-    var token = jwt.sign(user._id.toHexString(), config.SECRET);
+userSchema.methods.generateToken = async function () {
+    const user = this;
+    const token = jwt.sign(user._id.toHexString(), config.SECRET);
 
     user.token = token;
-    user.save(function (err, user) {
-        if (err) return cb(err);
-        cb(null, user);
-    });
+    return await user.save();
+    //eliminar validacion
 };
 
 // Método estático para validar un usuario mediante su Token
-userSchema.statics.findByToken = function (token, cb) {
-    var user = this;
+userSchema.statics.findByToken = async function (token) {
+    const user = this;
 
-    jwt.verify(token, config.SECRET, function (err, decode) {
-        user.findOne({ "_id": decode, "token": token }, function (err, user) {
-            if (err) return cb(err);
-            cb(null, user);
-        });
-    });
+    // usamos la decodificación directa
+    const decode = jwt.verify(token, config.SECRET);
+    return await user.findOne({ "_id": decode, "token": token });
 };
 
 // Eliminar token en el Logout
-userSchema.methods.deleteToken = function (token, cb) {
-    var user = this;
-
-    user.updateOne({ $unset: { token: 1 } }, function (err, raw) {
-        if (err) return cb(err);
-        cb(null, user);
-    });
+userSchema.methods.deleteToken = async function () {
+    const user = this;
+    return await user.updateOne({ $unset: { token: 1 } });
+    //eliminar validacion
 };
 
-const User = mongoose.model('User', userSchema);
+const User = model('User', userSchema);
 
-module.exports = User;
+export default User;
+//exportar como default
